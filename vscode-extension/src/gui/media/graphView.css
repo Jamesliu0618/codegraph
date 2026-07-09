@@ -179,6 +179,53 @@ body {
   font-size: 11px;
 }
 
+#graph-container .graph-canvas {
+  position: relative;
+  min-width: 240px;
+  overflow: hidden;
+}
+
+#graph-container .graph-canvas svg {
+  position: absolute;
+  inset: 0;
+  color: var(--vscode-descriptionForeground);
+}
+
+#graph-container .graph-edge {
+  stroke: currentColor;
+  stroke-width: 1;
+  opacity: 0.65;
+}
+
+#graph-container .graph-node {
+  position: absolute;
+  width: 92px;
+  min-height: 32px;
+  overflow: hidden;
+  padding: 4px 6px;
+  border: 1px solid var(--vscode-focusBorder);
+  border-radius: 4px;
+  background: var(--vscode-editorWidget-background);
+  color: var(--vscode-editorWidget-foreground);
+  cursor: pointer;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#graph-container .graph-node:hover {
+  background: var(--vscode-list-hoverBackground);
+}
+
+#graph-container .graph-kind {
+  display: block;
+  overflow: hidden;
+  color: var(--vscode-descriptionForeground);
+  font-size: 9px;
+  text-transform: uppercase;
+  text-overflow: ellipsis;
+}
+
 #graph-container .onboarding {
   display: flex;
   flex-direction: column;
@@ -297,3 +344,26 @@ body {
 [hidden] {
   display: none !important;
 }
+
+.files { flex: 0 0 42%; }
+.graph { flex: 1 1 58%; }
+#file-tree { min-height: 0; }
+.symbol-results { flex: 0 0 28%; min-height: 42px; border-top: 1px solid var(--vscode-panel-border); }
+.symbol-item { display: block; width: calc(100% - 8px); margin: 2px 4px; padding: 3px 6px; overflow: hidden; border: 0; border-radius: 3px; background: transparent; color: var(--vscode-foreground); cursor: pointer; text-align: left; text-overflow: ellipsis; white-space: nowrap; }
+.symbol-item:hover { background: var(--vscode-list-hoverBackground); }
+.symbol-kind { margin-right: 5px; color: var(--vscode-descriptionForeground); font-size: 10px; text-transform: uppercase; }
+.graph-hint { font-size: 10px; font-weight: 400; color: var(--vscode-descriptionForeground); text-transform: none; }
+#graph-container { position: relative; }
+#graph-container .graph-canvas { transform-origin: top left; }
+#graph-container .graph-node { z-index: 2; transition: opacity 120ms ease, box-shadow 120ms ease, border-color 120ms ease; }
+#graph-container .graph-node.is-selected { border-color: var(--vscode-charts-blue); box-shadow: 0 0 0 2px color-mix(in srgb, var(--vscode-charts-blue) 35%, transparent); }
+#graph-container .graph-node.is-impacted { border-color: var(--vscode-charts-orange); box-shadow: 0 0 0 2px color-mix(in srgb, var(--vscode-charts-orange) 25%, transparent); }
+#graph-container .graph-node.is-muted { opacity: 0.35; }
+#graph-container .graph-edge.is-related { stroke: var(--vscode-charts-blue); stroke-width: 2; opacity: 1; }
+.graph-controls { position: sticky; top: 0; z-index: 4; display: flex; gap: 3px; align-items: center; width: max-content; margin: 0 0 4px auto; padding: 2px; border: 1px solid var(--vscode-panel-border); border-radius: 3px; background: var(--vscode-editorWidget-background); }
+.graph-controls button { min-width: 24px; padding: 2px 5px; border: 0; background: transparent; color: var(--vscode-foreground); cursor: pointer; }
+.graph-controls button:hover { background: var(--vscode-list-hoverBackground); }
+.zoom-label { min-width: 38px; color: var(--vscode-descriptionForeground); font-size: 10px; text-align: center; }
+.context-menu { position: absolute; z-index: 5; display: flex; flex-direction: column; min-width: 128px; padding: 3px; border: 1px solid var(--vscode-panel-border); border-radius: 3px; background: var(--vscode-menu-background); box-shadow: 0 3px 10px #0006; }
+.context-menu button { padding: 4px 7px; border: 0; background: transparent; color: var(--vscode-menu-foreground); cursor: pointer; text-align: left; white-space: nowrap; }
+.context-menu button:hover { background: var(--vscode-menu-selectionBackground); color: var(--vscode-menu-selectionForeground); }

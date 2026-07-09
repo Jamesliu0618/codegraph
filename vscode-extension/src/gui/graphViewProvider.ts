@@ -7,6 +7,7 @@ import {
   FileNode,
 } from '../utils/workspace';
 import { logError } from '../utils/logger';
+import { CodeGraph, Node, Edge } from '../core';
 
 export class GraphViewProvider implements vscode.WebviewViewProvider {
   public static readonly viewType = 'codegraph.graphView';
@@ -64,6 +65,25 @@ export class GraphViewProvider implements vscode.WebviewViewProvider {
               await vscode.window.showTextDocument(document);
               return;
             }
+            case 'navigateToSymbol': {
+              const document = await vscode.workspace.openTextDocument(message.file);
+              const line = Math.max(0, Number(message.line || 1) - 1);
+              await vscode.window.showTextDocument(document, new vscode.Position(line, 0));
+              return;
+            }
+            case 'showFileGraph':
+              await this._pushFileGraph(message.file);
+              return;
+            case 'showNodeImpact':
+              await this._pushNodeImpact(message.nodeId);
+              return;
+            case 'findReferences':
+              await this._pushNodeGraph(message.nodeId);
+              return;
+            case 'copySymbol':
+              await vscode.env.clipboard.writeText(String(message.symbol ?? ''));
+              this._view?.webview.postMessage({ type: 'toast', message: 'Symbol copied' });
+              return;
             case 'initialize':
               await vscode.commands.executeCommand('codegraph.initialize');
               await this.refresh();
@@ -97,6 +117,120 @@ export class GraphViewProvider implements vscode.WebviewViewProvider {
 
   public async refresh(): Promise<void> {
     await this._pushInitialState(true);
+  }
+
+  /** Send a bounded call graph centered on the file selected in the tree. */
+  private async _pushFileGraph(file: string): Promise<void> {
+    const root = this._activeRoot();
+    if (!root || !file) return;
+
+    let graph: CodeGraph | undefined;
+    try {
+      graph = CodeGraph.openSync(root);
+      const relativePath = path.relative(root, file).split(path.sep).join('/');
+      const sourceNodes = graph.getNodesInFile(relativePath)
+        .filter(node => !['file', 'import', 'parameter'].includes(node.kind));
+      const nodes = new Map<string, Node>(sourceNodes.map(node => [node.id, node]));
+      const edges: Edge[] = [];
+
+      for (const source of sourceNodes) {
+        for (const edge of graph.getOutgoingEdges(source.id)) {
+          if (edge.kind !== 'calls') continue;
+          const target = graph.getNode(edge.target);
+          if (!target || ['file', 'import', 'parameter'].includes(target.kind)) continue;
+          nodes.set(target.id, target);
+          edges.push(edge);
+        }
+        for (const edge of graph.getIncomingEdges(source.id)) {
+          if (edge.kind !== 'calls') continue;
+          const caller = graph.getNode(edge.source);
+          if (!caller || ['file', 'import', 'parameter'].includes(caller.kind)) continue;
+          nodes.set(caller.id, caller);
+          edges.push(edge);
+        }
+      }
+
+      const limitedNodes = [...nodes.values()].slice(0, 80);
+      const allowed = new Set(limitedNodes.map(node => node.id));
+      const uniqueEdges = [...new Map(
+        edges
+          .filter(edge => allowed.has(edge.source) && allowed.has(edge.target))
+          .map(edge => [`${edge.source}:${edge.target}:${edge.kind}`, edge])
+      ).values()].slice(0, 160);
+
+      this._postGraph(relativePath, limitedNodes, uniqueEdges, nodes.size > limitedNodes.length || edges.length > uniqueEdges.length);
+    } finally {
+      graph?.close();
+    }
+  }
+
+  private async _pushNodeGraph(nodeId: string): Promise<void> {
+    const root = this._activeRoot();
+    if (!root || !nodeId) return;
+    let graph: CodeGraph | undefined;
+    try {
+      graph = CodeGraph.openSync(root);
+      const focal = graph.getNode(nodeId);
+      if (!focal) return;
+      const nodes = new Map<string, Node>([[focal.id, focal]]);
+      const edges: Edge[] = [];
+      for (const edge of [...graph.getIncomingEdges(nodeId), ...graph.getOutgoingEdges(nodeId)]) {
+        if (edge.kind !== 'calls' && edge.kind !== 'references') continue;
+        const other = graph.getNode(edge.source === nodeId ? edge.target : edge.source);
+        if (!other) continue;
+        nodes.set(other.id, other);
+        edges.push(edge);
+      }
+      const limitedNodes = [...nodes.values()].slice(0, 80);
+      const allowed = new Set(limitedNodes.map(node => node.id));
+      const uniqueEdges = [...new Map(edges.filter(edge => allowed.has(edge.source) && allowed.has(edge.target)).map(edge => [`${edge.source}:${edge.target}:${edge.kind}`, edge])).values()];
+      this._postGraph(focal.filePath, limitedNodes, uniqueEdges, nodes.size > limitedNodes.length, focal.id);
+    } finally {
+      graph?.close();
+    }
+  }
+
+  private async _pushNodeImpact(nodeId: string): Promise<void> {
+    const root = this._activeRoot();
+    if (!root || !nodeId) return;
+    let graph: CodeGraph | undefined;
+    try {
+      graph = CodeGraph.openSync(root);
+      const impact = graph.getImpactRadius(nodeId, 3);
+      this._view?.webview.postMessage({
+        type: 'impact',
+        nodeId,
+        ids: [...impact.nodes.keys()],
+        count: impact.nodes.size,
+      });
+    } finally {
+      graph?.close();
+    }
+  }
+
+  private _postGraph(file: string, nodes: Node[], edges: Edge[], truncated: boolean, focusedId?: string): void {
+    const root = this._activeRoot();
+    if (!root) return;
+    this._view?.webview.postMessage({
+        type: 'graph',
+        file,
+        nodes: nodes.map(node => this._graphNode(node, root)),
+        edges,
+        truncated,
+        focusedId,
+      });
+  }
+
+  private _graphNode(node: Node, root: string) {
+    return {
+      id: node.id,
+      name: node.name,
+      kind: node.kind,
+      filePath: node.filePath,
+      file: path.join(root, node.filePath),
+      line: node.startLine,
+      signature: node.signature,
+    };
   }
 
   private async _pushInitialState(force = false): Promise<void> {
@@ -170,6 +304,18 @@ export class GraphViewProvider implements vscode.WebviewViewProvider {
     const matches: FileNode[] = files
       .filter(f => f.relPath.toLowerCase().includes(q))
       .slice(0, 100);
+    let symbols: Array<ReturnType<GraphViewProvider['_graphNode']>> = [];
+    let graph: CodeGraph | undefined;
+    try {
+      graph = CodeGraph.openSync(root);
+      symbols = graph.searchNodes(query, { limit: 50 })
+        .filter(result => !['file', 'import', 'parameter'].includes(result.node.kind))
+        .map(result => this._graphNode(result.node, root));
+    } catch {
+      // File search remains useful while the database is being initialized.
+    } finally {
+      graph?.close();
+    }
     this._view?.webview.postMessage({
       type: 'searchResults',
       query,
@@ -179,6 +325,7 @@ export class GraphViewProvider implements vscode.WebviewViewProvider {
         size: f.size,
         absPath: f.absPath,
       })),
+      symbols,
     });
   }
 
@@ -233,9 +380,11 @@ export class GraphViewProvider implements vscode.WebviewViewProvider {
       <div class="panel files">
         <h3>Files <span class="count" id="files-count"></span></h3>
         <div id="file-tree" class="scroll"></div>
+        <h3>Symbols <span class="count" id="symbols-count"></span></h3>
+        <div id="symbol-results" class="scroll symbol-results"></div>
       </div>
       <div class="panel graph">
-        <h3>Call Graph</h3>
+        <h3>Call Graph <span class="graph-hint">select a file</span></h3>
         <div id="graph-container" class="scroll">
           <div class="onboarding" id="graph-onboarding">
             <div class="onboarding-icon">⬡</div>
@@ -248,8 +397,8 @@ export class GraphViewProvider implements vscode.WebviewViewProvider {
             <div class="onboarding-hint">Hover, Code Lens, and visual call graph unlock once the workspace is indexed (Phase&nbsp;2).</div>
           </div>
           <div class="placeholder" id="graph-placeholder" hidden>
-            <p>Indexed. Visual call graph coming in Phase 2.</p>
-            <p class="hint">For now, search files on the left or use the command palette.</p>
+            <p>Indexed. Select a source file to view its call graph.</p>
+            <p class="hint">Click a graph node to jump to its definition.</p>
           </div>
         </div>
       </div>
