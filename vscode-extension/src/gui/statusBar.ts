@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { isCodegraphInitialized } from '../utils/workspace';
+import { getInitializationSummary } from '../utils/workspace';
 
 export class StatusBarManager {
   private statusBarItem: vscode.StatusBarItem;
@@ -14,15 +14,28 @@ export class StatusBarManager {
   }
 
   public update() {
-    if (isCodegraphInitialized()) {
-      this.statusBarItem.text = '$(check) CodeGraph';
-      this.statusBarItem.tooltip = 'CodeGraph: Indexed';
-      this.statusBarItem.backgroundColor = undefined;
-    } else {
+    const summary = getInitializationSummary();
+    if (summary.total === 0) {
       this.statusBarItem.text = '$(warning) CodeGraph';
-      this.statusBarItem.tooltip = 'CodeGraph: Not indexed';
+      this.statusBarItem.tooltip = 'CodeGraph: No workspace open';
       this.statusBarItem.backgroundColor = new vscode.ThemeColor(
         'statusBarItem.warningBackground'
+      );
+    } else if (summary.initialized === summary.total) {
+      this.statusBarItem.text = '$(check) CodeGraph';
+      this.statusBarItem.tooltip = `CodeGraph: ${summary.initialized}/${summary.total} folders indexed`;
+      this.statusBarItem.backgroundColor = undefined;
+    } else if (summary.initialized === 0) {
+      this.statusBarItem.text = '$(warning) CodeGraph';
+      this.statusBarItem.tooltip = `CodeGraph: Not indexed (${summary.total} folder${summary.total === 1 ? '' : 's'})`;
+      this.statusBarItem.backgroundColor = new vscode.ThemeColor(
+        'statusBarItem.warningBackground'
+      );
+    } else {
+      this.statusBarItem.text = '$(sync~spin) CodeGraph';
+      this.statusBarItem.tooltip = `CodeGraph: ${summary.initialized}/${summary.total} folders indexed`;
+      this.statusBarItem.backgroundColor = new vscode.ThemeColor(
+        'statusBarItem.prominentBackground'
       );
     }
     this.statusBarItem.show();

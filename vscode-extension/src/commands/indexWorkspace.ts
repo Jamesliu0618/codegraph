@@ -1,19 +1,17 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
-import * as fs from 'fs';
-import { getWorkspaceRoot, isCodegraphInitialized } from '../utils/workspace';
+import { pickWorkspaceRoot, isCodegraphInitializedFor, listWorkspaceFiles } from '../utils/workspace';
 import { log, logError } from '../utils/logger';
 
 export async function indexWorkspaceCommand() {
-  const root = getWorkspaceRoot();
+  const root = await pickWorkspaceRoot('Select a workspace folder to index:');
   if (!root) {
-    vscode.window.showErrorMessage('CodeGraph: No workspace folder open');
     return;
   }
 
-  if (!isCodegraphInitialized()) {
+  if (!isCodegraphInitializedFor(root)) {
     const action = await vscode.window.showWarningMessage(
-      'CodeGraph: Workspace not initialized. Initialize first?',
+      `CodeGraph: ${path.basename(root)} is not initialized. Initialize first?`,
       'Initialize',
       'Cancel'
     );
@@ -33,8 +31,8 @@ export async function indexWorkspaceCommand() {
       try {
         // Collect files
         progress.report({ increment: 0, message: 'Scanning files...' });
-        const files = await collectFiles(root);
-        log(`Found ${files.length} files to index`);
+        const { files, errorCount } = await listWorkspaceFiles(root);
+        log(`Found ${files.length} files to index (${errorCount} dir read error(s))`);
 
         if (token.isCancellationRequested) return;
 
@@ -46,12 +44,12 @@ export async function indexWorkspaceCommand() {
           const percent = Math.round((i / files.length) * 100);
           progress.report({
             increment: (1 / files.length) * 100,
-            message: `Indexing ${path.basename(file)} (${percent}%)`,
+            message: `Indexing ${path.basename(file.absPath)} (${percent}%)`,
           });
 
           // TODO: Call ExtractionOrchestrator to parse file
           // For now, just log
-          log(`Indexed: ${file}`);
+          log(`Indexed: ${file.absPath}`);
         }
 
         log('Indexing completed successfully');
@@ -64,28 +62,4 @@ export async function indexWorkspaceCommand() {
       }
     }
   );
-}
-
-async function collectFiles(root: string): Promise<string[]> {
-  const extensions = ['.ts', '.tsx', '.js', '.jsx', '.py', '.go', '.rs', '.java', '.c', '.cpp'];
-  const exclude = ['node_modules', '.git', 'dist', 'build', '.codegraph'];
-
-  const files: string[] = [];
-
-  async function walk(dir: string) {
-    const entries = await fs.promises.readdir(dir, { withFileTypes: true });
-    for (const entry of entries) {
-      const fullPath = path.join(dir, entry.name);
-      if (entry.isDirectory()) {
-        if (!exclude.includes(entry.name)) {
-          await walk(fullPath);
-        }
-      } else if (extensions.includes(path.extname(entry.name))) {
-        files.push(fullPath);
-      }
-    }
-  }
-
-  await walk(root);
-  return files;
 }

@@ -39,6 +39,22 @@ async function main() {
             if (fs.existsSync(schemaSrc)) {
               fs.copyFileSync(schemaSrc, schemaDest);
             }
+
+            // Copy WebView media assets (CSS/JS for the Graph View)
+            // src/gui/media/* -> dist/media/* so the packaged .vsix
+            // includes them (vscodeignore excludes src/**).
+            const mediaSrc = path.join(__dirname, 'src/gui/media');
+            const mediaDest = path.join(__dirname, 'dist/media');
+            if (fs.existsSync(mediaSrc)) {
+              fs.mkdirSync(mediaDest, { recursive: true });
+              fs.readdirSync(mediaSrc).forEach(f => {
+                const srcFile = path.join(mediaSrc, f);
+                const destFile = path.join(mediaDest, f);
+                if (fs.statSync(srcFile).isFile()) {
+                  fs.copyFileSync(srcFile, destFile);
+                }
+              });
+            }
           });
         },
       },

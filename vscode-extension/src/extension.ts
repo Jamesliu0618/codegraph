@@ -1,10 +1,11 @@
 import * as vscode from 'vscode';
 import { log, logError } from './utils/logger';
-import { isCodegraphInitialized, getWorkspaceRoot } from './utils/workspace';
+import { isCodegraphInitialized, getWorkspaceRoots, getInitializationSummary } from './utils/workspace';
 import { initializeCommand } from './commands/initialize';
 import { indexWorkspaceCommand } from './commands/indexWorkspace';
 import { showStatusCommand } from './commands/showStatus';
 import { querySymbolCommand } from './commands/querySymbol';
+import { syncChangesCommand } from './commands/syncChanges';
 import { StatusBarManager } from './gui/statusBar';
 import { CodeGraphCodeLensProvider } from './features/codeLensProvider';
 import { CodeGraphHoverProvider } from './features/hoverProvider';
@@ -21,7 +22,8 @@ export async function activate(context: vscode.ExtensionContext) {
     vscode.commands.registerCommand('codegraph.initialize', initializeCommand),
     vscode.commands.registerCommand('codegraph.indexWorkspace', indexWorkspaceCommand),
     vscode.commands.registerCommand('codegraph.showStatus', showStatusCommand),
-    vscode.commands.registerCommand('codegraph.querySymbol', querySymbolCommand)
+    vscode.commands.registerCommand('codegraph.querySymbol', querySymbolCommand),
+    vscode.commands.registerCommand('codegraph.syncChanges', syncChangesCommand)
   );
 
   // Status bar
@@ -30,6 +32,7 @@ export async function activate(context: vscode.ExtensionContext) {
 
   // Code Lens Provider
   const codeLensProvider = new CodeGraphCodeLensProvider();
+  context.subscriptions.push(codeLensProvider);
   context.subscriptions.push(
     vscode.languages.registerCodeLensProvider(
       { scheme: 'file', language: '*' },
@@ -74,21 +77,24 @@ export async function activate(context: vscode.ExtensionContext) {
   );
 
   // Check if workspace is initialized
-  const root = getWorkspaceRoot();
-  if (!root) {
+  const roots = getWorkspaceRoots();
+  if (roots.length === 0) {
     log('No workspace folder open');
     return;
   }
 
-  if (!isCodegraphInitialized()) {
+  const summary = getInitializationSummary();
+  if (summary.initialized === 0) {
     const action = await vscode.window.showInformationMessage(
-      'CodeGraph: This workspace is not indexed. Would you like to initialize?',
+      `CodeGraph: This workspace is not indexed (${summary.total} folder${summary.total === 1 ? '' : 's'}). Initialize?`,
       'Initialize',
       'Later'
     );
     if (action === 'Initialize') {
       await vscode.commands.executeCommand('codegraph.initialize');
     }
+  } else if (summary.initialized < summary.total) {
+    log(`CodeGraph: ${summary.initialized} of ${summary.total} folders are indexed`);
   }
 
   log('CodeGraph extension activated');

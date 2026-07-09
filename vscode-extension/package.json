@@ -9,6 +9,7 @@
   },
   "categories": ["Programming Languages", "Other"],
   "activationEvents": [
+    "onStartupFinished",
     "workspaceContains:**/.codegraph"
   ],
   "main": "./dist/extension.js",

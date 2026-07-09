@@ -1,21 +1,20 @@
 import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
-import { getWorkspaceRoot, getCodegraphDir } from '../utils/workspace';
+import { pickWorkspaceRoot, getCodegraphDirFor, isCodegraphInitializedFor } from '../utils/workspace';
 import { log, logError } from '../utils/logger';
 
 export async function initializeCommand() {
-  const root = getWorkspaceRoot();
+  const root = await pickWorkspaceRoot('Select a workspace folder to initialize:');
   if (!root) {
-    vscode.window.showErrorMessage('CodeGraph: No workspace folder open');
     return;
   }
 
-  const cgDir = getCodegraphDir()!;
+  const cgDir = getCodegraphDirFor(root);
 
-  if (fs.existsSync(path.join(cgDir, 'codegraph.db'))) {
+  if (isCodegraphInitializedFor(root)) {
     const action = await vscode.window.showWarningMessage(
-      'CodeGraph: This workspace is already initialized. Re-initialize?',
+      `CodeGraph: ${path.basename(root)} is already initialized. Re-initialize?`,
       'Re-initialize',
       'Cancel'
     );
@@ -40,7 +39,7 @@ export async function initializeCommand() {
         fs.writeFileSync(path.join(cgDir, 'codegraph.db'), '');
 
         progress.report({ increment: 100, message: 'Done!' });
-        log('Workspace initialized successfully');
+        log(`Workspace initialized successfully: ${root}`);
         vscode.window.showInformationMessage('CodeGraph: Workspace initialized successfully');
       } catch (error) {
         logError('Failed to initialize workspace', error as Error);

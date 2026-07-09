@@ -1,16 +1,20 @@
 import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
-import { getCodegraphDir, isCodegraphInitialized } from '../utils/workspace';
+import { pickWorkspaceRoot, isCodegraphInitializedFor, getDatabasePathFor } from '../utils/workspace';
 
 export async function showStatusCommand() {
-  if (!isCodegraphInitialized()) {
-    vscode.window.showWarningMessage('CodeGraph: Workspace not initialized');
+  const root = await pickWorkspaceRoot('Select a workspace folder to show status for:');
+  if (!root) {
     return;
   }
 
-  const cgDir = getCodegraphDir()!;
-  const dbPath = path.join(cgDir, 'codegraph.db');
+  if (!isCodegraphInitializedFor(root)) {
+    vscode.window.showWarningMessage(`CodeGraph: ${path.basename(root)} is not initialized`);
+    return;
+  }
+
+  const dbPath = getDatabasePathFor(root);
   const stats = fs.statSync(dbPath);
   const dbSizeMB = (stats.size / 1024 / 1024).toFixed(2);
 
@@ -19,7 +23,7 @@ export async function showStatusCommand() {
   const edgeCount = 'N/A';
   const fileCount = 'N/A';
 
-  const message = `CodeGraph Status:
+  const message = `CodeGraph Status (${path.basename(root)}):
 Database: ${dbSizeMB} MB
 Nodes: ${nodeCount}
 Edges: ${edgeCount}
