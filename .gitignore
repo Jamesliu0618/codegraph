@@ -68,3 +68,10 @@ tmux-web/
 assets/__pycache__/
 
 assets/generate-waitlist.py
+
+# Agent state and dynamic planning directories
+.agents/
+.superpowers/
+
+# Generated extension core copy
+vscode-extension/src/core/
