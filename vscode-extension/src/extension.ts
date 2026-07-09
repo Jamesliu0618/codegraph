@@ -9,6 +9,9 @@ import { StatusBarManager } from './gui/statusBar';
 import { CodeGraphCodeLensProvider } from './features/codeLensProvider';
 import { CodeGraphHoverProvider } from './features/hoverProvider';
 import { CodeGraphDefinitionProvider } from './features/definitionProvider';
+import { McpManager } from './mcp/mcpManager';
+import { CopilotIntegration } from './mcp/copilotIntegration';
+import { GraphViewProvider } from './gui/graphViewProvider';
 
 export async function activate(context: vscode.ExtensionContext) {
   log('CodeGraph extension activating...');
@@ -49,6 +52,24 @@ export async function activate(context: vscode.ExtensionContext) {
     vscode.languages.registerDefinitionProvider(
       { scheme: 'file', language: '*' },
       definitionProvider
+    )
+  );
+
+  // MCP Manager
+  const mcpManager = new McpManager();
+  await mcpManager.start();
+  context.subscriptions.push(mcpManager);
+
+  // Copilot Integration
+  const copilot = new CopilotIntegration();
+  await copilot.register();
+
+  // Graph View Provider
+  const graphViewProvider = new GraphViewProvider(context.extensionUri);
+  context.subscriptions.push(
+    vscode.window.registerWebviewViewProvider(
+      GraphViewProvider.viewType,
+      graphViewProvider
     )
   );
 
