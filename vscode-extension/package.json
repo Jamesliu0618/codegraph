@@ -1,0 +1,75 @@
+{
+  "name": "codegraph-vscode",
+  "displayName": "CodeGraph",
+  "description": "Semantic code intelligence for VS Code — surgical context, fewer tool calls, faster answers.",
+  "version": "0.1.0",
+  "publisher": "local",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": ["Programming Languages", "Other"],
+  "activationEvents": [
+    "workspaceContains:**/.codegraph"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "codegraph.initialize",
+        "title": "CodeGraph: Initialize"
+      },
+      {
+        "command": "codegraph.indexWorkspace",
+        "title": "CodeGraph: Index Workspace"
+      },
+      {
+        "command": "codegraph.syncChanges",
+        "title": "CodeGraph: Sync Changes"
+      },
+      {
+        "command": "codegraph.showStatus",
+        "title": "CodeGraph: Show Status"
+      },
+      {
+        "command": "codegraph.querySymbol",
+        "title": "CodeGraph: Query Symbol"
+      },
+      {
+        "command": "codegraph.openGraphView",
+        "title": "CodeGraph: Open Graph View"
+      }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "codegraph",
+          "title": "CodeGraph",
+          "icon": "assets/icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "codegraph": [
+        {
+          "type": "webview",
+          "id": "codegraph.graphView",
+          "name": "Graph View"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run build",
+    "build": "node esbuild.js --production",
+    "watch": "node esbuild.js --watch",
+    "test": "node ./out/test/runTest.js",
+    "package": "vsce package --no-dependencies"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.85.0",
+    "@types/node": "^20.0.0",
+    "typescript": "^5.0.0",
+    "esbuild": "^0.20.0",
+    "@vscode/vsce": "^2.22.0"
+  }
+}
