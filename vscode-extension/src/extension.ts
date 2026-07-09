@@ -6,6 +6,9 @@ import { indexWorkspaceCommand } from './commands/indexWorkspace';
 import { showStatusCommand } from './commands/showStatus';
 import { querySymbolCommand } from './commands/querySymbol';
 import { StatusBarManager } from './gui/statusBar';
+import { CodeGraphCodeLensProvider } from './features/codeLensProvider';
+import { CodeGraphHoverProvider } from './features/hoverProvider';
+import { CodeGraphDefinitionProvider } from './features/definitionProvider';
 
 export async function activate(context: vscode.ExtensionContext) {
   log('CodeGraph extension activating...');
@@ -21,6 +24,33 @@ export async function activate(context: vscode.ExtensionContext) {
   // Status bar
   const statusBar = new StatusBarManager();
   context.subscriptions.push(statusBar);
+
+  // Code Lens Provider
+  const codeLensProvider = new CodeGraphCodeLensProvider();
+  context.subscriptions.push(
+    vscode.languages.registerCodeLensProvider(
+      { scheme: 'file', language: '*' },
+      codeLensProvider
+    )
+  );
+
+  // Hover Provider
+  const hoverProvider = new CodeGraphHoverProvider();
+  context.subscriptions.push(
+    vscode.languages.registerHoverProvider(
+      { scheme: 'file', language: '*' },
+      hoverProvider
+    )
+  );
+
+  // Definition Provider
+  const definitionProvider = new CodeGraphDefinitionProvider();
+  context.subscriptions.push(
+    vscode.languages.registerDefinitionProvider(
+      { scheme: 'file', language: '*' },
+      definitionProvider
+    )
+  );
 
   // Check if workspace is initialized
   const root = getWorkspaceRoot();
