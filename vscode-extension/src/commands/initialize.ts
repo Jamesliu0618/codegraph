@@ -3,6 +3,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { pickWorkspaceRoot, getCodegraphDirFor, isCodegraphInitializedFor } from '../utils/workspace';
 import { log, logError } from '../utils/logger';
+import { DatabaseConnection } from '../core/db';
 
 export async function initializeCommand() {
   const root = await pickWorkspaceRoot('Select a workspace folder to initialize:');
@@ -34,9 +35,9 @@ export async function initializeCommand() {
         fs.mkdirSync(cgDir, { recursive: true });
 
         progress.report({ increment: 50, message: 'Initializing database...' });
-        // TODO: Initialize SQLite database with schema
-        // For now, just create a placeholder
-        fs.writeFileSync(path.join(cgDir, 'codegraph.db'), '');
+        const dbPath = path.join(cgDir, 'codegraph.db');
+        const db = DatabaseConnection.initialize(dbPath);
+        db.close();
 
         progress.report({ increment: 100, message: 'Done!' });
         log(`Workspace initialized successfully: ${root}`);

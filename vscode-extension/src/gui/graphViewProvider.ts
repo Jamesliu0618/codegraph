@@ -15,6 +15,9 @@ export class GraphViewProvider implements vscode.WebviewViewProvider {
 
   constructor(private readonly _extensionUri: vscode.Uri) {}
 
+  private _lastActiveRoot?: string;
+  private _currentSessionId = 0;
+
   public resolveWebviewView(
     webviewView: vscode.WebviewView,
     context: vscode.WebviewViewResolveContext,
@@ -33,6 +36,14 @@ export class GraphViewProvider implements vscode.WebviewViewProvider {
 
     webviewView.webview.html = this._getHtmlForWebview(webviewView.webview);
 
+    // Listen for active editor changes to refresh the view for multi-root workspaces
+    const activeEditorListener = vscode.window.onDidChangeActiveTextEditor(async () => {
+      await this._pushInitialState(false);
+    });
+    webviewView.onDidDispose(() => {
+      activeEditorListener.dispose();
+    });
+
     // Handle messages from the webview
     webviewView.webview.onDidReceiveMessage(
       async (message) => {
@@ -40,10 +51,10 @@ export class GraphViewProvider implements vscode.WebviewViewProvider {
           switch (message.command) {
             case 'ready':
               // WebView just mounted — push the first batch of state.
-              await this._pushInitialState();
+              await this._pushInitialState(true);
               return;
             case 'refreshFiles':
-              await this._pushFiles();
+              await this.refresh();
               return;
             case 'searchFiles':
               await this._pushSearchResults(message.query ?? '');
@@ -55,12 +66,11 @@ export class GraphViewProvider implements vscode.WebviewViewProvider {
             }
             case 'initialize':
               await vscode.commands.executeCommand('codegraph.initialize');
-              await this._pushStats();
+              await this.refresh();
               return;
             case 'indexWorkspace':
               await vscode.commands.executeCommand('codegraph.indexWorkspace');
-              await this._pushFiles();
-              await this._pushStats();
+              await this.refresh();
               return;
           }
         } catch (err) {
@@ -85,23 +95,50 @@ export class GraphViewProvider implements vscode.WebviewViewProvider {
     }
   }
 
-  private async _pushInitialState(): Promise<void> {
-    await this._pushFiles();
-    await this._pushStats();
+  public async refresh(): Promise<void> {
+    await this._pushInitialState(true);
+  }
+
+  private async _pushInitialState(force = false): Promise<void> {
+    const root = this._activeRoot();
+    if (!force && root === this._lastActiveRoot) {
+      return;
+    }
+    this._lastActiveRoot = root;
+    const sessionId = ++this._currentSessionId;
+    await this._pushFiles(root, sessionId);
+    await this._pushStats(root, sessionId);
   }
 
   private _activeRoot(): string | undefined {
+    const activeEditor = vscode.window.activeTextEditor;
+    if (activeEditor) {
+      const folder = vscode.workspace.getWorkspaceFolder(activeEditor.document.uri);
+      if (folder) {
+        return folder.uri.fsPath;
+      }
+    }
+    if (this._lastActiveRoot) {
+      const roots = getWorkspaceRoots();
+      if (roots.includes(this._lastActiveRoot)) {
+        return this._lastActiveRoot;
+      }
+    }
     const roots = getWorkspaceRoots();
     return roots.length > 0 ? roots[0] : undefined;
   }
 
-  private async _pushFiles(): Promise<void> {
-    const root = this._activeRoot();
+  private async _pushFiles(root: string | undefined, sessionId: number): Promise<void> {
     if (!root) {
-      this._view?.webview.postMessage({ type: 'files', files: [], root: null });
+      if (sessionId === this._currentSessionId) {
+        this._view?.webview.postMessage({ type: 'files', files: [], root: null });
+      }
       return;
     }
     const { files, errorCount } = await listWorkspaceFiles(root);
+    if (sessionId !== this._currentSessionId) {
+      return;
+    }
     this._view?.webview.postMessage({
       type: 'files',
       root,
@@ -121,11 +158,15 @@ export class GraphViewProvider implements vscode.WebviewViewProvider {
     const root = this._activeRoot();
     if (!root) return;
     const q = query.trim().toLowerCase();
+    const sessionId = ++this._currentSessionId;
     if (q.length === 0) {
-      await this._pushFiles();
+      await this._pushFiles(root, sessionId);
       return;
     }
     const { files } = await listWorkspaceFiles(root);
+    if (sessionId !== this._currentSessionId) {
+      return;
+    }
     const matches: FileNode[] = files
       .filter(f => f.relPath.toLowerCase().includes(q))
       .slice(0, 100);
@@ -141,16 +182,20 @@ export class GraphViewProvider implements vscode.WebviewViewProvider {
     });
   }
 
-  private async _pushStats(): Promise<void> {
-    const root = this._activeRoot();
+  private async _pushStats(root: string | undefined, sessionId: number): Promise<void> {
     if (!root) {
-      this._view?.webview.postMessage({
-        type: 'stats',
-        stats: { files: 0, initialized: false, dbSizeBytes: 0, totalSizeBytes: 0, root: null },
-      });
+      if (sessionId === this._currentSessionId) {
+        this._view?.webview.postMessage({
+          type: 'stats',
+          stats: { files: 0, initialized: false, dbSizeBytes: 0, totalSizeBytes: 0, root: null },
+        });
+      }
       return;
     }
     const stats = await getWorkspaceStats(root);
+    if (sessionId !== this._currentSessionId) {
+      return;
+    }
     this._view?.webview.postMessage({ type: 'stats', stats: { ...stats, root } });
   }
 

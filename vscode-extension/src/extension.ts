@@ -76,6 +76,33 @@ export async function activate(context: vscode.ExtensionContext) {
     )
   );
 
+  // Update status bar on workspace changes
+  context.subscriptions.push(
+    vscode.workspace.onDidChangeWorkspaceFolders(() => {
+      statusBar.update();
+    })
+  );
+
+  // Watch for .codegraph/codegraph.db changes to refresh UI automatically
+  const watcher = vscode.workspace.createFileSystemWatcher('**/.codegraph/codegraph.db');
+  context.subscriptions.push(watcher);
+
+  // Debounce UI refresh to avoid performance bottlenecks during heavy database writes
+  let dbChangeTimeout: NodeJS.Timeout | undefined;
+  const debouncedDbChange = () => {
+    if (dbChangeTimeout) {
+      clearTimeout(dbChangeTimeout);
+    }
+    dbChangeTimeout = setTimeout(async () => {
+      statusBar.update();
+      await graphViewProvider.refresh();
+    }, 500);
+  };
+
+  watcher.onDidCreate(debouncedDbChange);
+  watcher.onDidChange(debouncedDbChange);
+  watcher.onDidDelete(debouncedDbChange);
+
   // Check if workspace is initialized
   const roots = getWorkspaceRoots();
   if (roots.length === 0) {

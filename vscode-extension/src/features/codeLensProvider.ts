@@ -1,5 +1,7 @@
 import * as vscode from 'vscode';
+import * as path from 'path';
 import { isCodegraphInitializedFor, getWorkspaceRoot } from '../utils/workspace';
+import { CodeGraph } from '../core';
 
 export class CodeGraphCodeLensProvider implements vscode.CodeLensProvider, vscode.Disposable {
   private _onDidChangeCodeLenses: vscode.EventEmitter<void> = new vscode.EventEmitter<void>();
@@ -28,42 +30,84 @@ export class CodeGraphCodeLensProvider implements vscode.CodeLensProvider, vscod
     }
   }
 
-  public provideCodeLenses(
+  public async provideCodeLenses(
     document: vscode.TextDocument,
     token: vscode.CancellationToken
-  ): vscode.CodeLens[] {
-    // Only run on languages the regex actually understands. Without this
-    // gate, we'd produce 0 lenses on .py/.go/.rs etc. and look broken.
-    // Other languages will be enabled when their CodeGraph extractors land.
-    const supportedLanguages = new Set(['typescript', 'typescriptreact', 'javascript', 'javascriptreact']);
-    if (!supportedLanguages.has(document.languageId)) {
-      return [];
-    }
-
-    // Don't show fake numbers. Without a real graph we have no honest
-    // caller/callee counts to show. Returning [] hides Code Lens
-    // entirely until the workspace is initialized AND indexed
-    // (Phase 2 Blocker B2).
+  ): Promise<vscode.CodeLens[]> {
     const root = getWorkspaceRoot();
     if (!root || !isCodegraphInitializedFor(root)) {
       return [];
     }
 
-    const codeLenses: vscode.CodeLens[] = [];
+    const supportedLanguages = new Set(['typescript', 'typescriptreact', 'javascript', 'javascriptreact']);
+    if (!supportedLanguages.has(document.languageId)) {
+      return [];
+    }
 
-    // TODO: Query CodeGraph for caller/callee counts and show real
-    // numbers (Phase 2 Blocker B2). For now, no Code Lens is rendered
-    // when the workspace IS initialized but the graph is still empty,
-    // because the regex match below would otherwise attach a misleading
-    // "0 callers · 0 callees" label to every TS/JS function.
-    return codeLenses;
+    let cg: CodeGraph | undefined;
+    try {
+      cg = await CodeGraph.open(root);
+      const relativePath = path.relative(root, document.fileName).replace(/\\/g, '/');
+      const nodes = cg.getNodesInFile(relativePath);
+      
+      const lenses: vscode.CodeLens[] = [];
+      for (const n of nodes) {
+        if (n.kind === 'function' || n.kind === 'method' || n.kind === 'class') {
+          const range = new vscode.Range(n.start_line, n.start_column, n.start_line, n.end_column);
+          const lens = new vscode.CodeLens(range);
+          (lens as any).nodeId = n.id;
+          (lens as any).projectRoot = root;
+          lenses.push(lens);
+        }
+      }
+      return lenses;
+    } catch {
+      return [];
+    } finally {
+      if (cg) {
+        try {
+          cg.close();
+        } catch {
+          // best effort
+        }
+      }
+    }
   }
 
-  public resolveCodeLens(
+  public async resolveCodeLens(
     codeLens: vscode.CodeLens,
     token: vscode.CancellationToken
-  ): vscode.CodeLens {
-    return codeLens;
+  ): Promise<vscode.CodeLens | undefined> {
+    const nodeId = (codeLens as any).nodeId;
+    const root = (codeLens as any).projectRoot;
+    if (!nodeId || !root) return undefined;
+
+    let cg: CodeGraph | undefined;
+    try {
+      cg = await CodeGraph.open(root);
+      const node = cg.getNode(nodeId);
+      if (!node) return undefined;
+
+      const callers = cg.getCallers(nodeId);
+      const callees = cg.getCallees(nodeId);
+
+      codeLens.command = {
+        title: `$(people) ${callers.length} callers · $(phone) ${callees.length} callees`,
+        command: 'codegraph.querySymbol',
+        arguments: [node.name],
+      };
+      return codeLens;
+    } catch {
+      return undefined;
+    } finally {
+      if (cg) {
+        try {
+          cg.close();
+        } catch {
+          // best effort
+        }
+      }
+    }
   }
 
   public refresh() {

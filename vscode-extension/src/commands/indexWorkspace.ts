@@ -1,7 +1,8 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
-import { pickWorkspaceRoot, isCodegraphInitializedFor, listWorkspaceFiles } from '../utils/workspace';
+import { pickWorkspaceRoot, isCodegraphInitializedFor } from '../utils/workspace';
 import { log, logError } from '../utils/logger';
+import { CodeGraph } from '../core';
 
 export async function indexWorkspaceCommand() {
   const root = await pickWorkspaceRoot('Select a workspace folder to index:');
@@ -24,41 +25,80 @@ export async function indexWorkspaceCommand() {
   await vscode.window.withProgress(
     {
       location: vscode.ProgressLocation.Notification,
-      title: 'CodeGraph: Indexing workspace...',
+      title: 'CodeGraph: Indexing...',
       cancellable: true,
     },
-    async (progress, token) => {
+    async (vscodeProgress, token) => {
+      const controller = new AbortController();
+      token.onCancellationRequested(() => {
+        controller.abort();
+      });
+
+      let cg: CodeGraph | undefined;
+
       try {
-        // Collect files
-        progress.report({ increment: 0, message: 'Scanning files...' });
-        const { files, errorCount } = await listWorkspaceFiles(root);
-        log(`Found ${files.length} files to index (${errorCount} dir read error(s))`);
+        vscodeProgress.report({ increment: 0, message: 'Opening CodeGraph project...' });
+        cg = await CodeGraph.open(root);
 
-        if (token.isCancellationRequested) return;
+        let lastPercent = 0;
+        const result = await cg.indexAll({
+          signal: controller.signal,
+          onProgress: (p) => {
+            if (token.isCancellationRequested) return;
 
-        // Index files
-        for (let i = 0; i < files.length; i++) {
-          if (token.isCancellationRequested) return;
+            let phaseLabel = 'Indexing';
+            if (p.phase === 'scanning') phaseLabel = 'Scanning files';
+            else if (p.phase === 'extracting') phaseLabel = 'Extracting symbols';
+            else if (p.phase === 'resolving') phaseLabel = 'Resolving references';
+            else if (p.phase === 'persisting') phaseLabel = 'Saving to database';
 
-          const file = files[i];
-          const percent = Math.round((i / files.length) * 100);
-          progress.report({
-            increment: (1 / files.length) * 100,
-            message: `Indexing ${path.basename(file.absPath)} (${percent}%)`,
-          });
+            const fileLabel = p.file ? `: ${path.basename(p.file)}` : '';
+            let percentLabel = '';
+            let increment = 0;
 
-          // TODO: Call ExtractionOrchestrator to parse file
-          // For now, just log
-          log(`Indexed: ${file.absPath}`);
+            if (p.total && p.total > 0) {
+              const currentPercent = Math.round((p.current / p.total) * 100);
+              percentLabel = ` (${currentPercent}%)`;
+              const delta = currentPercent - lastPercent;
+              if (delta > 0) {
+                increment = delta;
+                lastPercent = currentPercent;
+              }
+            }
+
+            vscodeProgress.report({
+              increment,
+              message: `${phaseLabel}${fileLabel}${percentLabel}`,
+            });
+          }
+        });
+
+        if (token.isCancellationRequested) {
+          log('Indexing cancelled by user');
+          vscode.window.showInformationMessage('CodeGraph: Indexing cancelled');
+          return;
         }
 
-        log('Indexing completed successfully');
-        vscode.window.showInformationMessage(
-          `CodeGraph: Indexed ${files.length} files successfully`
-        );
+        if (result.success) {
+          log(`Indexing completed successfully: ${result.filesIndexed} files indexed, ${result.nodesCreated} nodes, ${result.edgesCreated} edges created.`);
+          vscode.window.showInformationMessage(
+            `CodeGraph: Indexed ${result.filesIndexed} files successfully (${result.nodesCreated} nodes, ${result.edgesCreated} edges)`
+          );
+        } else {
+          const errMsg = result.errors?.[0]?.message ?? 'Unknown indexing error';
+          throw new Error(errMsg);
+        }
       } catch (error) {
         logError('Indexing failed', error as Error);
         vscode.window.showErrorMessage(`CodeGraph: Indexing failed: ${(error as Error).message}`);
+      } finally {
+        if (cg) {
+          try {
+            cg.close();
+          } catch {
+            // best effort cleanup
+          }
+        }
       }
     }
   );

@@ -5,7 +5,25 @@ const fs = require('fs');
 const production = process.argv.includes('--production');
 const watch = process.argv.includes('--watch');
 
+function copyCore() {
+  const coreSrc = path.join(__dirname, '../src');
+  const coreDest = path.join(__dirname, 'src/core');
+  if (fs.existsSync(coreSrc)) {
+    fs.rmSync(coreDest, { recursive: true, force: true });
+    fs.mkdirSync(coreDest, { recursive: true });
+    fs.cpSync(coreSrc, coreDest, {
+      recursive: true,
+      filter: (src) => {
+        const rel = path.relative(coreSrc, src);
+        return !rel.startsWith('bin') && !rel.startsWith('ui') && !rel.startsWith('installer');
+      }
+    });
+    console.log('Successfully copied core src to vscode-extension/src/core');
+  }
+}
+
 async function main() {
+  copyCore();
   const ctx = await esbuild.context({
     entryPoints: ['src/extension.ts'],
     bundle: true,

@@ -69,7 +69,29 @@ export function getCodegraphDir(): string | undefined {
 
 export function isCodegraphInitializedFor(root: string): boolean {
   const dir = getCodegraphDirFor(root);
-  return fs.existsSync(dir) && fs.existsSync(path.join(dir, 'codegraph.db'));
+  const dbPath = path.join(dir, 'codegraph.db');
+  if (!fs.existsSync(dir) || !fs.existsSync(dbPath)) {
+    return false;
+  }
+  try {
+    const stats = fs.statSync(dbPath);
+    if (stats.size === 0) {
+      return false;
+    }
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { DatabaseSync } = require('node:sqlite');
+    const db = new DatabaseSync(dbPath);
+    try {
+      const row = db.prepare('SELECT version FROM schema_versions ORDER BY version DESC LIMIT 1').get() as { version: number } | undefined;
+      db.close();
+      return !!row && row.version > 0;
+    } catch {
+      db.close();
+      return false;
+    }
+  } catch {
+    return false;
+  }
 }
 
 export function isCodegraphInitialized(): boolean {
