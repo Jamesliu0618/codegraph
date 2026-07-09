@@ -3,6 +3,8 @@ import { log, logError } from './utils/logger';
 import { isCodegraphInitialized, getWorkspaceRoot } from './utils/workspace';
 import { initializeCommand } from './commands/initialize';
 import { indexWorkspaceCommand } from './commands/indexWorkspace';
+import { showStatusCommand } from './commands/showStatus';
+import { querySymbolCommand } from './commands/querySymbol';
 import { StatusBarManager } from './gui/statusBar';
 
 export async function activate(context: vscode.ExtensionContext) {
@@ -11,7 +13,9 @@ export async function activate(context: vscode.ExtensionContext) {
   // Register commands
   context.subscriptions.push(
     vscode.commands.registerCommand('codegraph.initialize', initializeCommand),
-    vscode.commands.registerCommand('codegraph.indexWorkspace', indexWorkspaceCommand)
+    vscode.commands.registerCommand('codegraph.indexWorkspace', indexWorkspaceCommand),
+    vscode.commands.registerCommand('codegraph.showStatus', showStatusCommand),
+    vscode.commands.registerCommand('codegraph.querySymbol', querySymbolCommand)
   );
 
   // Status bar
