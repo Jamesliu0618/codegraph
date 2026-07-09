@@ -3,6 +3,7 @@ import { log, logError } from './utils/logger';
 import { isCodegraphInitialized, getWorkspaceRoot } from './utils/workspace';
 import { initializeCommand } from './commands/initialize';
 import { indexWorkspaceCommand } from './commands/indexWorkspace';
+import { StatusBarManager } from './gui/statusBar';
 
 export async function activate(context: vscode.ExtensionContext) {
   log('CodeGraph extension activating...');
@@ -12,6 +13,10 @@ export async function activate(context: vscode.ExtensionContext) {
     vscode.commands.registerCommand('codegraph.initialize', initializeCommand),
     vscode.commands.registerCommand('codegraph.indexWorkspace', indexWorkspaceCommand)
   );
+
+  // Status bar
+  const statusBar = new StatusBarManager();
+  context.subscriptions.push(statusBar);
 
   // Check if workspace is initialized
   const root = getWorkspaceRoot();
